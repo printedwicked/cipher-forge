@@ -10,8 +10,8 @@ looks, so on a short or mostly-printable payload they report a false CRACKED on 
 XOR cards do it in the screenshot below), and the "toolbox wins / held" summary is only a roll-up of those scores, not
 a proof either way. See [Known limits](#known-limits).
 
-Nothing leaves the page. There is no server, no analytics and no build step; the only network requests are two
-Google Fonts stylesheets, and the page works without them. The encryption schemes are a Caesar shift, single-byte
+Nothing leaves the page. There is no server, no analytics and no build step; the only network request is one
+Google Fonts stylesheet (and the font files it pulls from fonts.gstatic.com), and the page works without them. The encryption schemes are a Caesar shift, single-byte
 XOR, repeating-key XOR (Vigenere-style), RC4, a deliberately weak 8-byte toy block cipher in ECB mode, Base64 (not
 encryption, included so you can watch it read straight back) and AES-CTR, AES-CBC and AES-GCM through the browser's
 `crypto.subtle` with a SHA-256-derived key. The attacks are single-byte XOR brute force with English scoring, a
@@ -42,8 +42,10 @@ node tests/check.js            # all passed
 Then open `index.html` in a browser. Double-clicking the file works (`file://`); to serve it instead:
 
 ```sh
-python3 -m http.server 8080    # then open http://127.0.0.1:8080/
+python -m http.server 8080     # then open http://127.0.0.1:8080/
 ```
+
+On Linux and macOS the interpreter is usually `python3`; `python3 -m http.server 8080` does the same.
 
 1. **Forge a payload.** Type text, generate random bytes or a pattern, or upload a file. The hex dump shows what
    will be encrypted.
