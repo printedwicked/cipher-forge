@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Cipher Forge — build a payload, encrypt it, then attack your own ciphertext. Everything runs in your browser; nothing is sent anywhere.">
+<meta name="color-scheme" content="light dark">
+<title>Cipher Forge</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* Layout: a three-stage bench — build a payload, encrypt it, then attack your own ciphertext.
+   Palette: deep slate ground, signal-amber accent (the "forge" heat), cyan for recovered/good. */
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --panel-2: #eceef2;
+  --ink: #1b2130;
+  --ink-dim: #5a6376;
+  --line: #d7dbe3;
+  --accent: #c6692a;      /* forge amber, desaturated for light */
+  --accent-ink: #8f4312;
+  --good: #0f7a6b;        /* cracked / recovered / weak-exposed */
+  --warn: #b4851a;
+  --crit: #b23a48;
+  --strong: #35507a;      /* "this resisted the toolbox" */
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --ui: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10131a;
+    --panel: #181c25;
+    --panel-2: #1f242f;
+    --ink: #e7eaf0;
+    --ink-dim: #99a1b3;
+    --line: #2b313d;
+    --accent: #f08a3c;
+    --accent-ink: #f6a865;
+    --good: #37d6b6;
+    --warn: #e5b74a;
+    --crit: #ff6b7e;
+    --strong: #7aa0e0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10131a;
+  --panel: #181c25;
+  --panel-2: #1f242f;
+  --ink: #e7eaf0;
+  --ink-dim: #99a1b3;
+  --line: #2b313d;
+  --accent: #f08a3c;
+  --accent-ink: #f6a865;
+  --good: #37d6b6;
+  --warn: #e5b74a;
+  --crit: #ff6b7e;
+  --strong: #7aa0e0;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--ui);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding-block: 20px 60px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* header */
+.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.3rem); margin: 0; letter-spacing: -0.02em; font-weight: 600; text-wrap: balance; }
+h1 .spark { color: var(--accent); }
+.tag {
+  font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.04em;
+  color: var(--accent-ink); border: 1px solid var(--line); border-radius: 999px;
+  padding: 3px 10px; background: var(--panel-2); white-space: nowrap;
+}
+.lede { color: var(--ink-dim); max-width: 64ch; margin: 2px 0 0; font-size: 0.95rem; }
+.themebtn {
+  font-family: var(--mono); font-size: 0.72rem; cursor: pointer;
+  background: var(--panel); color: var(--ink-dim); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 11px; letter-spacing: 0.03em;
+}
+.themebtn:hover { color: var(--ink); border-color: var(--accent); }
+
+.note {
+  margin: 14px 0 22px; padding: 10px 14px; border-left: 3px solid var(--strong);
+  background: var(--panel); border-radius: 0 8px 8px 0; color: var(--ink-dim);
+  font-size: 0.85rem;
+}
+.note b { color: var(--ink); font-weight: 600; }
+
+/* stage layout */
+.stage { margin-top: 20px; }
+.stage-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.stage-num {
+  font-family: var(--mono); font-size: 0.8rem; color: var(--bg);
+  background: var(--accent); width: 26px; height: 26px; border-radius: 7px;
+  display: grid; place-items: center; font-weight: 700; flex: none;
+}
+.stage-head h2 { font-size: 1.1rem; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+.stage-head .hint { color: var(--ink-dim); font-size: 0.82rem; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+
+label { display: block; font-size: 0.74rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 5px; font-weight: 500; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.row > div { min-width: 0; }
+.field { flex: 1 1 auto; min-width: 0; }
+
+select, input[type=text], input[type=number], textarea {
+  font-family: var(--mono); font-size: 0.85rem; width: 100%;
+  background: var(--panel-2); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px;
+}
+textarea { resize: vertical; min-height: 68px; line-height: 1.45; }
+select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; flex-wrap: wrap; }
+.seg button {
+  font-family: var(--ui); font-size: 0.8rem; cursor: pointer; border: none;
+  background: var(--panel); color: var(--ink-dim); padding: 8px 13px;
+  border-right: 1px solid var(--line);
+}
+.seg button:last-child { border-right: none; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+:root[data-theme="dark"] .seg button[aria-pressed="true"],
+:root:not([data-theme="light"]) .seg button[aria-pressed="true"] { color: #12151c; }
+
+button.act {
+  font-family: var(--ui); font-weight: 600; font-size: 0.88rem; cursor: pointer;
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 9px; padding: 10px 18px; letter-spacing: 0.01em;
+}
+:root[data-theme="dark"] button.act,
+:root:not([data-theme="light"]) button.act { color: #12151c; }
+button.act:hover { filter: brightness(1.07); }
+button.act.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+button.act.ghost:hover { border-color: var(--accent); color: var(--accent-ink); filter: none; }
+button.act:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.mini { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-dim); cursor: pointer; background: none; border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; }
+.mini:hover { color: var(--ink); border-color: var(--accent); }
+
+/* hex viewer */
+.hexwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.hexview { font-family: var(--mono); font-size: 0.74rem; line-height: 1.55; padding: 10px 12px; white-space: pre; margin: 0; min-width: max-content; }
+.hexview .off { color: var(--ink-dim); }
+.hexview .asc { color: var(--accent-ink); }
+
+.statline { display: flex; gap: 8px 18px; flex-wrap: wrap; font-family: var(--mono); font-size: 0.76rem; color: var(--ink-dim); margin-top: 10px; }
+.statline b { color: var(--ink); font-weight: 600; }
+
+/* entropy meter */
+.meter { height: 10px; border-radius: 6px; background: linear-gradient(90deg, var(--good), var(--warn), var(--crit)); position: relative; margin-top: 6px; overflow: hidden; }
+.meter .fill { position: absolute; top: 0; right: 0; bottom: 0; background: var(--panel-2); opacity: 0.86; }
+.meterlabel { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.72rem; color: var(--ink-dim); margin-top: 4px; }
+
+/* verdict chips */
+.chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.74rem; padding: 4px 10px; border-radius: 999px; border: 1px solid; font-weight: 600; }
+.chip.good { color: var(--good); border-color: var(--good); }
+.chip.strong { color: var(--strong); border-color: var(--strong); }
+.chip.warn { color: var(--warn); border-color: var(--warn); }
+.chip.crit { color: var(--crit); border-color: var(--crit); }
+.chip .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+/* attack results */
+.result { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.result > .rhead { display: flex; align-items: center; gap: 10px; padding: 10px 13px; background: var(--panel-2); flex-wrap: wrap; }
+.result > .rhead .title { font-weight: 600; font-size: 0.9rem; }
+.result > .rbody { padding: 12px 13px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-family: var(--mono); font-size: 0.78rem; }
+.kv dt { color: var(--ink-dim); }
+.kv dd { margin: 0; color: var(--ink); word-break: break-all; }
+.recovered { font-family: var(--mono); font-size: 0.8rem; background: var(--panel-2); border-radius: 8px; padding: 10px; margin-top: 10px; white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
+.recovered .hl { color: var(--good); }
+
+.cands { font-family: var(--mono); font-size: 0.74rem; margin-top: 8px; }
+.cands .c { display: flex; gap: 10px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+.cands .c:last-child { border-bottom: none; }
+.cands .c span.k { color: var(--accent-ink); width: 5.5em; flex: none; }
+.cands .c span.s { color: var(--ink-dim); width: 5em; flex: none; text-align: right; }
+.cands .c span.p { color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.foot { margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink-dim); font-size: 0.78rem; }
+.foot code { font-family: var(--mono); color: var(--accent-ink); }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); font-family: var(--mono); font-size: 0.78rem; padding: 9px 16px; border-radius: 9px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 50; }
+.toast.show { opacity: 1; }
+.hidden-note { font-size: 0.72rem; color: var(--ink-dim); margin-top: 6px; font-family: var(--mono); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="brand">
+        <h1>Cipher<span class="spark">Forge</span></h1>
+        <span class="tag">LOCAL · BROWSER-ONLY</span>
+      </div>
+      <p class="lede">A crypto pen-test bench. Forge a payload, encrypt it with anything from a Caesar shift to AES-GCM, then throw your own ciphertext at the attack toolbox and watch which schemes fold.</p>
+    </div>
+    <button class="themebtn" id="theme">◐ theme</button>
+  </div>
+
+  <div class="note">
+    <b>Everything runs in this page.</b> Your payload never leaves the browser — you encrypt your own data and attack your own output. This is a learning rig for seeing <i>why</i> weak crypto breaks, not a cracker for other people's files. The toolbox folds toy ciphers in milliseconds and bounces straight off AES; that contrast is the whole point.
+  </div>
+
+  <!-- STAGE 1 -->
+  <section class="stage">
+    <div class="stage-head">
+      <div class="stage-num">1</div>
+      <h2>Forge a payload</h2>
+      <span class="hint">the "bin file" you'll encrypt</span>
+    </div>
+    <div class="panel">
+      <div class="seg" id="srcseg" role="group" aria-label="payload source">
+        <button data-src="text" aria-pressed="true">Text</button>
+        <button data-src="random">Random bytes</button>
+        <button data-src="pattern">Pattern</button>
+        <button data-src="file">Upload</button>
+      </div>
+
+      <div style="margin-top:12px" id="src-text">
+        <label for="ptext">Plaintext</label>
+        <textarea id="ptext">Meet at the old mill house at dawn. Bring the ledger and tell no one. The quick brown fox jumps over the lazy dog, again and again, until the pattern shows.</textarea>
+      </div>
+
+      <div style="margin-top:12px" id="src-random" hidden>
+        <div class="row">
+          <div class="field"><label for="rsize">Size (bytes)</label><input type="number" id="rsize" value="256" min="1" max="65536"></div>
+          <button class="act ghost" id="gen-random">Generate</button>
+        </div>
+        <p class="hidden-note">Cryptographically random bytes (crypto.getRandomValues). High entropy — nothing for the toolbox to grab onto.</p>
+      </div>
+
+      <div style="margin-top:12px" id="src-pattern" hidden>
+        <div class="row">
+          <div class="field">
+            <label for="pkind">Fill</label>
+            <select id="pkind">
+              <option value="zeros">All zero bytes</option>
+              <option value="incr">Incrementing 00..FF…</option>
+              <option value="repeat">Repeating block "YELLOW SUBMARINE"</option>
+              <option value="ascii">Repeating "AAAA…"</option>
+            </select>
+          </div>
+          <div class="field"><label for="psize">Size (bytes)</label><input type="number" id="psize" value="128" min="1" max="65536"></div>
+          <button class="act ghost" id="gen-pattern">Generate</button>
+        </div>
+        <p class="hidden-note">Low-entropy, repeating payloads are what make ECB mode leak its structure. Try the repeating block, encrypt with Toy-ECB, then run the ECB detector.</p>
+      </div>
+
+      <div style="margin-top:12px" id="src-file" hidden>
+        <label for="pfile">Choose a file (stays local)</label>
+        <input type="file" id="pfile" style="font-family:var(--ui);padding:7px">
+      </div>
+
+      <div class="statline">
+        <span>payload: <b id="pstat-len">0</b> bytes</span>
+        <span>entropy: <b id="pstat-ent">0.00</b> bits/byte</span>
+        <span id="pstat-kind">source: text</span>
+      </div>
+      <div class="meter" style="margin-top:8px"><div class="fill" id="pstat-meterfill"></div></div>
+      <div class="meterlabel"><span>0 — ordered</span><span>8 — random</span></div>
+
+      <div class="hexwrap" style="margin-top:12px"><pre class="hexview" id="phex"></pre></div>
+    </div>
+  </section>
+
+  <!-- STAGE 2 -->
+  <section class="stage">
+    <div class="stage-head">
+      <div class="stage-num">2</div>
+      <h2>Encrypt</h2>
+      <span class="hint">pick a scheme and a key</span>
+    </div>
+    <div class="panel">
+      <div class="row">
+        <div class="field">
+          <label for="method">Method</label>
+          <select id="method">
+            <optgroup label="Classical / weak (toolbox should win)">
+              <option value="caesar">Caesar / byte shift</option>
+              <option value="xor1">Single-byte XOR</option>
+              <option value="xor" selected>Repeating-key XOR (Vigenère-style)</option>
+              <option value="rc4">RC4 stream</option>
+              <option value="ecb">Toy block cipher — ECB mode</option>
+            </optgroup>
+            <optgroup label="Not encryption (teaching trap)">
+              <option value="b64">Base64 (encoding only!)</option>
+            </optgroup>
+            <optgroup label="Modern (toolbox should fail)">
+              <option value="aes-ctr">AES-256-CTR (Web Crypto)</option>
+              <option value="aes-cbc">AES-256-CBC (Web Crypto)</option>
+              <option value="aes-gcm">AES-256-GCM (Web Crypto, authenticated)</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="field" id="keyfield">
+          <label for="key" id="keylabel">Key</label>
+          <input type="text" id="key" value="ICE">
+        </div>
+        <button class="act" id="encrypt">Encrypt →</button>
+      </div>
+      <p class="hidden-note" id="methodnote"></p>
+
+      <div class="statline">
+        <span>ciphertext: <b id="cstat-len">—</b> bytes</span>
+        <span>entropy: <b id="cstat-ent">—</b> bits/byte</span>
+        <span id="cstat-method">—</span>
+      </div>
+      <div class="meter" style="margin-top:8px"><div class="fill" id="cstat-meterfill" style="right:100%"></div></div>
+      <div class="meterlabel"><span>low entropy = exploitable</span><span>~8 = looks random</span></div>
+
+      <div class="hexwrap" style="margin-top:12px"><pre class="hexview" id="chex">— encrypt a payload to see the bytes —</pre></div>
+      <div class="row" style="margin-top:10px">
+        <button class="mini" id="copyhex">copy hex</button>
+        <button class="mini" id="copyb64">copy base64</button>
+        <button class="act ghost" id="roundtrip">Verify decrypt (round-trip)</button>
+        <span id="rtresult" style="font-family:var(--mono);font-size:0.78rem;align-self:center"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- STAGE 3 -->
+  <section class="stage">
+    <div class="stage-head">
+      <div class="stage-num">3</div>
+      <h2>Attack the ciphertext</h2>
+      <span class="hint">no key supplied — the toolbox works blind</span>
+    </div>
+    <div class="panel">
+      <p style="margin-top:0;color:var(--ink-dim);font-size:0.88rem">Runs every attack against whatever is currently in the ciphertext buffer, assuming nothing about which method you used. Weak schemes surrender their key and plaintext; strong ones give the toolbox nothing but noise.</p>
+      <div class="row">
+        <button class="act" id="attack">Run full toolbox</button>
+        <button class="act ghost" id="attack-clear">Clear results</button>
+      </div>
+      <div id="attack-out"></div>
+    </div>
+  </section>
+
+  <div class="foot">
+    Attacks implemented: single-byte XOR brute-force (256-key, English-scored) · repeating-key XOR (Hamming-distance keysize detection → per-column brute, CryptoPals set 1/6) · Caesar brute · frequency analysis · ECB repeated-block detection · Shannon entropy. AES uses the browser's <code>crypto.subtle</code>. Built as one self-contained file — view source to read every line.
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================ core (verified in node) ============================ */
+const encUTF = new TextEncoder();
+const decUTF = new TextDecoder('utf-8', { fatal: false });
+const strToBytes = s => encUTF.encode(s);
+const bytesToStr = b => decUTF.decode(new Uint8Array(b));
+const toHex = b => [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+function fromHex(h){ h=h.replace(/[^0-9a-fA-F]/g,''); const o=new Uint8Array(h.length>>1); for(let i=0;i<o.length;i++)o[i]=parseInt(h.substr(i*2,2),16); return o; }
+function toB64(b){ let s=''; for(const x of b) s+=String.fromCharCode(x); return btoa(s); }
+
+function xorKey(bytes, key){ const o=new Uint8Array(bytes.length); for(let i=0;i<bytes.length;i++)o[i]=bytes[i]^key[i%key.length]; return o; }
+function caesar(bytes, shift){ const o=new Uint8Array(bytes.length); for(let i=0;i<bytes.length;i++)o[i]=(bytes[i]+shift)&0xff; return o; }
+function rc4(bytes, key){
+  const S=new Uint8Array(256); for(let i=0;i<256;i++)S[i]=i;
+  let j=0; for(let i=0;i<256;i++){ j=(j+S[i]+key[i%key.length])&0xff; [S[i],S[j]]=[S[j],S[i]]; }
+  const o=new Uint8Array(bytes.length); let a=0,b=0;
+  for(let n=0;n<bytes.length;n++){ a=(a+1)&0xff; b=(b+S[a])&0xff; [S[a],S[b]]=[S[b],S[a]]; o[n]=bytes[n]^S[(S[a]+S[b])&0xff]; }
+  return o;
+}
+function toyBlock(block, key){ const o=new Uint8Array(8); let k=0; for(let i=0;i<key.length;i++)k=(k*31+key[i])&0xff; for(let i=0;i<8;i++){ o[i]=block[i]^((k+i*17)&0xff); } return o; }
+function toyEcb(bytes, key, dir){
+  let data=bytes;
+  if(dir>0){ const pad=8-(bytes.length%8); const p=pad===0?8:pad; data=new Uint8Array(bytes.length+p); data.set(bytes); for(let i=bytes.length;i<data.length;i++)data[i]=p; }
+  const o=new Uint8Array(data.length);
+  for(let off=0;off<data.length;off+=8){ o.set(toyBlock(data.slice(off,off+8),key),off); }
+  if(dir<0){ const p=o[o.length-1]; if(p>=1&&p<=8) return o.slice(0,o.length-p); }
+  return o;
+}
+
+const FREQ={' ':13,e:12.7,t:9,a:8.2,o:7.5,i:7,n:6.7,s:6.3,h:6,r:6,d:4.3,l:4,u:2.8,c:2.8,m:2.4,w:2.4,f:2.2,g:2,y:2,p:1.9,b:1.5,v:1,k:0.8};
+function scoreEnglish(bytes){ let s=0; for(const b of bytes){ const c=String.fromCharCode(b).toLowerCase(); if(FREQ[c])s+=FREQ[c]; else if(b>=32&&b<=126)s+=0.2; else if(b===9||b===10||b===13)s+=0.1; else s-=5; } return s/Math.max(1,bytes.length); }
+function crackSingleXor(ct){ let best=null; for(let k=0;k<256;k++){ const pt=ct.map(b=>b^k); const sc=scoreEnglish(pt); if(!best||sc>best.score)best={key:k,score:sc,pt}; } return best; }
+function hamming(a,b){ let d=0; const n=Math.min(a.length,b.length); for(let i=0;i<n;i++){ let x=a[i]^b[i]; while(x){d+=x&1;x>>=1;} } return d; }
+function crackRepeatingXor(ct, maxKeysize=40){
+  const sizes=[]; const maxKs=Math.min(maxKeysize, Math.floor(ct.length/4));
+  for(let ks=2;ks<=maxKs;ks++){ let total=0,pairs=0; for(let i=0;i+2*ks<=ct.length&&pairs<20;i+=ks){ total+=hamming(ct.slice(i,i+ks),ct.slice(i+ks,i+2*ks))/ks; pairs++; } if(pairs)sizes.push({ks,dist:total/pairs}); }
+  sizes.sort((a,b)=>a.dist-b.dist);
+  const candidates=sizes.slice(0,6).map(s=>s.ks);
+  const solve=ks=>{ const key=new Uint8Array(ks); for(let col=0;col<ks;col++){ const column=[]; for(let i=col;i<ct.length;i+=ks)column.push(ct[i]); key[col]=crackSingleXor(column).key; } const pt=xorKey(ct,key); return {keysize:ks,key,score:scoreEnglish(pt),pt}; };
+  let best=null; const results=candidates.map(solve);
+  for(const r of results) if(!best||r.score>best.score)best=r;
+  if(best){ for(const r of results){ if(r.keysize<best.keysize && r.score>=best.score-0.05 && best.keysize%r.keysize===0) best=r; } }
+  return best;
+}
+function detectEcb(ct, blockSize=8){ const seen=new Map(); let repeats=0,total=0; for(let i=0;i+blockSize<=ct.length;i+=blockSize){ const h=toHex(ct.slice(i,i+blockSize)); total++; if(seen.has(h))repeats++; seen.set(h,true); } return {total,unique:seen.size,repeats,likelyEcb:repeats>0,blockSize}; }
+function entropy(bytes){ if(!bytes.length)return 0; const c=new Array(256).fill(0); for(const b of bytes)c[b]++; let h=0; for(const n of c)if(n){ const p=n/bytes.length; h-=p*Math.log2(p); } return h; }
+
+/* ============================ state ============================ */
+let payload = strToBytes(document.getElementById('ptext').value);
+let cipher = null;            // Uint8Array
+let lastMethod = null;        // {id, key}
+
+/* ============================ ui helpers ============================ */
+const $ = id => document.getElementById(id);
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1500); }
+async function copy(text, label){ try{ await navigator.clipboard.writeText(text); toast(label+' copied'); }catch(e){ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');toast(label+' copied');}catch(_){toast('copy failed');} document.body.removeChild(ta); } }
+
+function hexDump(bytes, limit=256){
+  if(!bytes || !bytes.length) return '(empty)';
+  const lines=[]; const n=Math.min(bytes.length,limit);
+  for(let o=0;o<n;o+=16){
+    const slice=bytes.slice(o,o+16);
+    const hex=[...slice].map(b=>b.toString(16).padStart(2,'0')).join(' ').padEnd(47,' ');
+    const asc=[...slice].map(b=>(b>=32&&b<=126)?String.fromCharCode(b):'·').join('');
+    lines.push(`<span class="off">${o.toString(16).padStart(6,'0')}</span>  ${esc(hex)}  <span class="asc">${esc(asc)}</span>`);
+  }
+  if(bytes.length>limit) lines.push(`<span class="off">… ${bytes.length-limit} more bytes</span>`);
+  return lines.join('\n');
+}
+function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function refreshPayload(){
+  $('phex').innerHTML = hexDump(payload);
+  $('pstat-len').textContent = payload.length;
+  const e = entropy(payload);
+  $('pstat-ent').textContent = e.toFixed(2);
+  $('pstat-meterfill').style.right = (100 - e/8*100) + '%';
+}
+function refreshCipher(){
+  if(!cipher){ $('chex').textContent='— encrypt a payload to see the bytes —'; $('cstat-len').textContent='—'; $('cstat-ent').textContent='—'; $('cstat-meterfill').style.right='100%'; return; }
+  $('chex').innerHTML = hexDump(cipher);
+  $('cstat-len').textContent = cipher.length;
+  const e = entropy(cipher);
+  $('cstat-ent').textContent = e.toFixed(2);
+  $('cstat-meterfill').style.right = (100 - e/8*100) + '%';
+}
+
+/* ============================ stage 1 wiring ============================ */
+$('srcseg').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  [...$('srcseg').children].forEach(x=>x.setAttribute('aria-pressed', x===b));
+  const src=b.dataset.src;
+  for(const s of ['text','random','pattern','file']) $('src-'+s).hidden = (s!==src);
+  $('pstat-kind').textContent='source: '+src;
+});
+$('ptext').addEventListener('input', ()=>{ payload=strToBytes($('ptext').value); refreshPayload(); });
+$('gen-random').addEventListener('click', ()=>{ const n=Math.max(1,Math.min(65536,+$('rsize').value||256)); payload=new Uint8Array(n); crypto.getRandomValues(payload); refreshPayload(); toast(n+' random bytes forged'); });
+$('gen-pattern').addEventListener('click', ()=>{
+  const n=Math.max(1,Math.min(65536,+$('psize').value||128)); const kind=$('pkind').value; const o=new Uint8Array(n);
+  if(kind==='zeros'){ /* already 0 */ }
+  else if(kind==='incr'){ for(let i=0;i<n;i++)o[i]=i&0xff; }
+  else if(kind==='repeat'){ const blk=strToBytes('YELLOW SUBMARINE'); for(let i=0;i<n;i++)o[i]=blk[i%blk.length]; }
+  else if(kind==='ascii'){ o.fill(65); }
+  payload=o; refreshPayload(); toast('pattern forged');
+});
+$('pfile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=()=>{ payload=new Uint8Array(r.result); refreshPayload(); toast(f.name+' loaded ('+payload.length+' B)'); }; r.readAsArrayBuffer(f); });
+
+/* ============================ stage 2: encryption ============================ */
+const METHOD_NOTES = {
+  caesar: 'Adds a fixed value to every byte. One of 256 possibilities — brute force is instant.',
+  xor1: 'XORs every byte with one key byte. 256 keys; English scoring picks the winner immediately.',
+  xor: 'Vigenère-style: XOR against a repeating key. Keysize leaks through Hamming distance, then each column is a single-byte XOR. This is CryptoPals challenge 6.',
+  rc4: 'A real stream cipher, but broken in practice (biased keystream). Here the round-trip works; the toolbox treats the output as a stream and will not recover it from one short message — entropy is your tell.',
+  ecb: 'Block cipher in ECB mode: identical plaintext blocks encrypt to identical ciphertext blocks. The cipher itself is a toy, but the ECB weakness is the real lesson — feed it a repeating pattern.',
+  b64: 'Not encryption at all. Base64 is reversible with no key. Included so you can see the toolbox (and anyone) read it straight back.',
+  'aes-ctr': 'AES-256 in counter mode via the browser. A fresh random nonce is prepended. No classical attack here applies.',
+  'aes-cbc': 'AES-256-CBC with a random IV prepended. Output is indistinguishable from random to the toolbox.',
+  'aes-gcm': 'AES-256-GCM — authenticated encryption. Random nonce prepended, auth tag appended. Tampering is detected on decrypt.'
+};
+const KEY_IS_TEXT = { caesar:false, xor1:false };
+function updateMethodUi(){
+  const m=$('method').value;
+  $('methodnote').textContent = METHOD_NOTES[m]||'';
+  const kf=$('keyfield');
+  if(m==='b64'){ kf.style.visibility='hidden'; }
+  else { kf.style.visibility='visible'; }
+  const kl=$('keylabel'), ki=$('key');
+  if(m==='caesar'){ kl.textContent='Shift (0–255)'; if(isNaN(+ki.value))ki.value='3'; }
+  else if(m==='xor1'){ kl.textContent='Key byte (0–255)'; if(isNaN(+ki.value))ki.value='88'; }
+  else if(m.startsWith('aes')){ kl.textContent='Passphrase (→ SHA-256 key)'; if(!ki.value||!isNaN(+ki.value))ki.value='correct horse battery staple'; }
+  else { kl.textContent='Key (text)'; if(!ki.value||!isNaN(+ki.value))ki.value='ICE'; }
+}
+$('method').addEventListener('change', updateMethodUi);
+
+async function aesKey(pass){ const h=await crypto.subtle.digest('SHA-256', strToBytes(pass)); return crypto.subtle.importKey('raw', h, {name:'AES-' + (curAesMode), length:256}, false, ['encrypt','decrypt']); }
+let curAesMode='CTR';
+
+async function doEncrypt(){
+  if(!payload || !payload.length){ toast('forge a payload first'); return; }
+  const m=$('method').value; const kv=$('key').value;
+  try{
+    if(m==='caesar'){ cipher=caesar(payload, ((+kv)%256+256)%256); lastMethod={id:m,key:((+kv)%256+256)%256}; }
+    else if(m==='xor1'){ const k=new Uint8Array([((+kv)%256+256)%256]); cipher=xorKey(payload,k); lastMethod={id:m,key:k}; }
+    else if(m==='xor'){ const k=strToBytes(kv||'ICE'); cipher=xorKey(payload,k); lastMethod={id:m,key:k}; }
+    else if(m==='rc4'){ const k=strToBytes(kv||'key'); cipher=rc4(payload,k); lastMethod={id:m,key:k}; }
+    else if(m==='ecb'){ const k=strToBytes(kv||'blockkey'); cipher=toyEcb(payload,k,1); lastMethod={id:m,key:k}; }
+    else if(m==='b64'){ cipher=strToBytes(toB64(payload)); lastMethod={id:m}; }
+    else if(m.startsWith('aes')){
+      curAesMode = m==='aes-ctr'?'CTR':m==='aes-cbc'?'CBC':'GCM';
+      const key=await aesKey(kv||'passphrase');
+      if(curAesMode==='CTR'){ const iv=crypto.getRandomValues(new Uint8Array(16)); const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-CTR',counter:iv,length:64},key,payload)); cipher=concat(iv,ct); }
+      else if(curAesMode==='CBC'){ const iv=crypto.getRandomValues(new Uint8Array(16)); const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-CBC',iv},key,payload)); cipher=concat(iv,ct); }
+      else { const iv=crypto.getRandomValues(new Uint8Array(12)); const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,payload)); cipher=concat(iv,ct); }
+      lastMethod={id:m,key:kv||'passphrase'};
+    }
+    $('cstat-method').textContent='method: '+m;
+    refreshCipher(); $('rtresult').textContent=''; toast('encrypted');
+  }catch(e){ toast('encrypt error: '+e.message); }
+}
+function concat(a,b){ const o=new Uint8Array(a.length+b.length); o.set(a); o.set(b,a.length); return o; }
+$('encrypt').addEventListener('click', doEncrypt);
+
+async function doDecrypt(){
+  if(!cipher||!lastMethod) return null;
+  const m=lastMethod.id;
+  if(m==='caesar') return caesar(cipher, (256-lastMethod.key)%256);
+  if(m==='xor1'||m==='xor') return xorKey(cipher, lastMethod.key);
+  if(m==='rc4') return rc4(cipher, lastMethod.key);
+  if(m==='ecb') return toyEcb(cipher, lastMethod.key, -1);
+  if(m==='b64') return new Uint8Array([...atob(bytesToStr(cipher))].map(c=>c.charCodeAt(0)));
+  if(m.startsWith('aes')){
+    const key=await aesKey(lastMethod.key);
+    try{
+      if(curAesMode==='CTR'){ const iv=cipher.slice(0,16); return new Uint8Array(await crypto.subtle.decrypt({name:'AES-CTR',counter:iv,length:64},key,cipher.slice(16))); }
+      if(curAesMode==='CBC'){ const iv=cipher.slice(0,16); return new Uint8Array(await crypto.subtle.decrypt({name:'AES-CBC',iv},key,cipher.slice(16))); }
+      const iv=cipher.slice(0,12); return new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv},key,cipher.slice(12)));
+    }catch(e){ return {authFail:true}; }
+  }
+  return null;
+}
+$('roundtrip').addEventListener('click', async ()=>{
+  const d=await doDecrypt();
+  const out=$('rtresult');
+  if(!d){ out.textContent='nothing to verify'; return; }
+  if(d.authFail){ out.style.color='var(--crit)'; out.textContent='✗ auth failed'; return; }
+  const ok = d.length===payload.length && d.every((b,i)=>b===payload[i]);
+  out.style.color = ok?'var(--good)':'var(--crit)';
+  out.textContent = ok ? '✓ decrypt matches original payload' : '✗ mismatch';
+});
+$('copyhex').addEventListener('click', ()=>{ if(cipher) copy(toHex(cipher),'hex'); });
+$('copyb64').addEventListener('click', ()=>{ if(cipher) copy(toB64(cipher),'base64'); });
+
+/* ============================ stage 3: the toolbox ============================ */
+function chip(kind, text){ return `<span class="chip ${kind}"><span class="dot"></span>${text}</span>`; }
+function resultCard(title, chips, bodyHtml){
+  return `<div class="result"><div class="rhead"><span class="title">${title}</span>${chips}</div><div class="rbody">${bodyHtml}</div></div>`;
+}
+function previewText(bytes, n=400){ return esc(bytesToStr(bytes.slice(0,n))) + (bytes.length>n?' …':''); }
+
+function runAttacks(){
+  const out=$('attack-out');
+  if(!cipher||!cipher.length){ out.innerHTML = `<div class="result"><div class="rbody" style="color:var(--ink-dim)">Encrypt something in stage 2 first — the toolbox attacks the ciphertext buffer.</div></div>`; return; }
+  const ct=cipher; const ent=entropy(ct); const cards=[];
+
+  // 0. entropy read
+  let entChip, entVerdict;
+  if(ent>7.5){ entChip=chip('strong','high entropy'); entVerdict='Bytes look statistically random. Classical structure attacks have nothing to bite on — this is what a modern cipher (or good compression) looks like.'; }
+  else if(ent>6){ entChip=chip('warn','medium entropy'); entVerdict='Some structure remains. Worth running the stream/substitution attacks below.'; }
+  else { entChip=chip('crit','low entropy'); entVerdict='Highly structured. Something is leaking — the attacks below should find it.'; }
+  cards.push(resultCard('Entropy probe', entChip, `<div class="kv"><dt>Shannon</dt><dd>${ent.toFixed(3)} bits/byte (8.0 = uniform random)</dd><dt>length</dt><dd>${ct.length} bytes</dd></div><p style="margin:10px 0 0;color:var(--ink-dim);font-size:0.84rem">${entVerdict}</p>`));
+
+  // 1. ECB detection
+  const ecb=detectEcb(ct,8);
+  if(ecb.repeats>0){
+    cards.push(resultCard('ECB block detector', chip('good','PATTERN LEAK'),
+      `<div class="kv"><dt>blocks</dt><dd>${ecb.total} total, ${ecb.unique} unique</dd><dt>repeats</dt><dd>${ecb.repeats} duplicated 8-byte blocks</dd></div>
+       <p style="margin:10px 0 0;color:var(--ink-dim);font-size:0.84rem">Identical ciphertext blocks mean identical plaintext blocks — the hallmark of ECB mode. An attacker can map structure, swap blocks, and detect repeated content without ever finding the key.</p>`));
+  } else {
+    cards.push(resultCard('ECB block detector', chip('strong','no repeats'),
+      `<div class="kv"><dt>blocks</dt><dd>${ecb.total} total, all unique</dd></div><p style="margin:10px 0 0;color:var(--ink-dim);font-size:0.84rem">No duplicate blocks — consistent with a stream cipher, CBC/CTR/GCM, or simply non-repeating plaintext.</p>`));
+  }
+
+  // 2. Caesar brute
+  let bestCaesar=null;
+  for(let s=0;s<256;s++){ const pt=caesar(ct,(256-s)%256); const sc=scoreEnglish(pt); if(!bestCaesar||sc>bestCaesar.sc)bestCaesar={s,sc,pt}; }
+  const caesarHit = bestCaesar.sc>2.2;
+  cards.push(resultCard('Caesar / shift brute-force', caesarHit?chip('good','CRACKED'):chip('strong','no fit'),
+    caesarHit
+     ? `<div class="kv"><dt>shift</dt><dd>+${bestCaesar.s}</dd><dt>score</dt><dd>${bestCaesar.sc.toFixed(2)} (English-like)</dd></div><div class="recovered"><span class="hl">${previewText(bestCaesar.pt)}</span></div>`
+     : `<p style="margin:0;color:var(--ink-dim);font-size:0.84rem">Best of 256 shifts scored ${bestCaesar.sc.toFixed(2)} — no shift yields English. Not a Caesar cipher.</p>`));
+
+  // 3. single-byte XOR
+  const sb=crackSingleXor(ct); const sbHit=sb.score>2.2;
+  cards.push(resultCard('Single-byte XOR brute-force', sbHit?chip('good','CRACKED'):chip('strong','no fit'),
+    sbHit
+     ? `<div class="kv"><dt>key byte</dt><dd>0x${sb.key.toString(16).padStart(2,'0')} (${sb.key}) ${sb.key>=32&&sb.key<=126?"'"+String.fromCharCode(sb.key)+"'":''}</dd><dt>score</dt><dd>${sb.score.toFixed(2)}</dd></div><div class="recovered"><span class="hl">${previewText(sb.pt)}</span></div>`
+     : `<p style="margin:0;color:var(--ink-dim);font-size:0.84rem">Best single-byte key scored ${sb.score.toFixed(2)} — no single byte reveals English.</p>`));
+
+  // 4. repeating-key XOR
+  let rep=null; try{ rep=crackRepeatingXor(ct); }catch(e){}
+  const repHit = rep && rep.score>2.2;
+  if(rep){
+    cards.push(resultCard('Repeating-key XOR (Hamming → column brute)', repHit?chip('good','CRACKED'):chip('strong','no fit'),
+      repHit
+       ? `<div class="kv"><dt>keysize</dt><dd>${rep.keysize} bytes (detected)</dd><dt>key</dt><dd>${esc(printableKey(rep.key))} &nbsp;·&nbsp; hex ${toHex(rep.key)}</dd><dt>score</dt><dd>${rep.score.toFixed(2)}</dd></div><div class="recovered"><span class="hl">${previewText(rep.pt)}</span></div>`
+       : `<p style="margin:0;color:var(--ink-dim);font-size:0.84rem">Detected candidate keysize ${rep.keysize}, but recovered plaintext scored only ${rep.score.toFixed(2)} — the output resists this attack (too short, random, or genuinely strong crypto).</p>`));
+  }
+
+  // verdict banner
+  const anyHit = caesarHit||sbHit||repHit||ecb.repeats>0;
+  const banner = anyHit
+    ? `<div class="result" style="border-color:var(--good)"><div class="rhead" style="background:var(--panel)">${chip('good','TOOLBOX WINS')}<span class="title">This ciphertext was exploitable</span></div><div class="rbody" style="color:var(--ink-dim);font-size:0.86rem">At least one blind attack recovered structure or plaintext without the key. For anything real, this scheme is not safe.</div></div>`
+    : `<div class="result" style="border-color:var(--strong)"><div class="rhead" style="background:var(--panel)">${chip('strong','HELD')}<span class="title">The toolbox found nothing</span></div><div class="rbody" style="color:var(--ink-dim);font-size:0.86rem">No classical attack recovered the plaintext and entropy is ${ent.toFixed(2)}. This is the expected result for AES-CTR/CBC/GCM or a well-keyed stream cipher — the key stays secret and the bytes look random.</div></div>`;
+
+  out.innerHTML = banner + cards.join('');
+}
+function printableKey(key){ return [...key].map(b=>(b>=32&&b<=126)?String.fromCharCode(b):'·').join(''); }
+$('attack').addEventListener('click', ()=>{ $('attack').disabled=true; $('attack').textContent='working…'; setTimeout(()=>{ runAttacks(); $('attack').disabled=false; $('attack').textContent='Run full toolbox'; },30); });
+$('attack-clear').addEventListener('click', ()=>{ $('attack-out').innerHTML=''; });
+
+/* ============================ theme ============================ */
+(function(){
+  let pref=null; try{ pref=localStorage.getItem('cf-theme'); }catch(e){}
+  if(pref) document.documentElement.setAttribute('data-theme', pref);
+  $('theme').addEventListener('click', ()=>{
+    const cur=document.documentElement.getAttribute('data-theme');
+    const isDark = cur ? cur==='dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    const next=isDark?'light':'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try{ localStorage.setItem('cf-theme', next); }catch(e){}
+  });
+})();
+
+/* ============================ init ============================ */
+updateMethodUi();
+refreshPayload();
+refreshCipher();
+</script>
+</body>
+</html>
